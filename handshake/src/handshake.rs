@@ -219,6 +219,35 @@ impl <T: HandshakeDriver, B: CryptoBackend, R: Deref<Target = B>> AllocHyphaeHan
         Ok(self.crypto.export_1rtt_rekey(&mut self.noise_handshake, rekey)?)
     }
 
+    /// Export keying material for application use, similar to TLS export_keying_material
+    /// 
+    /// This function allows applications to derive additional key material from
+    /// the completed handshake state. The derived keys are cryptographically
+    /// bound to the handshake and can be used for application-specific purposes.
+    /// 
+    /// # Parameters
+    /// * `label` - An application-defined label to distinguish different uses
+    /// * `context` - Optional context information to bind into the derivation
+    /// * `output` - Buffer to receive the derived key material
+    /// 
+    /// # Returns
+    /// * `Ok(())` on success
+    /// * `Err(Error::Internal)` if called before handshake completion
+    /// 
+    /// # Example
+    /// ```rust,ignore
+    /// let mut app_key = vec![0u8; 32];
+    /// handshake.export_keying_material(b"my-app-key", b"session-123", &mut app_key)?;
+    /// ```
+    pub fn export_keying_material(&self, label: &[u8], context: &[u8], output: &mut [u8]) -> Result<(), Error> {
+        if !self.is_handshake_finished() {
+            return Err(Error::Internal);
+        }
+        
+        self.noise_handshake.export_keying_material(label, context, output)?;
+        Ok(())
+    }
+
     pub fn read_message(&mut self, message: Vec<u8>) -> Result<(), Error> {
         match self.phase {
             AllocHyphaeHandshakePhase::Initiator(_) => self.initiator_read_message(message),

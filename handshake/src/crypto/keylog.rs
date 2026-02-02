@@ -236,6 +236,10 @@ where
 
         Ok(())
     }
+
+    fn export_keying_material(&self, label: &[u8], context: &[u8], output: &mut [u8]) -> Result<(), CryptoError> {
+        self.inner.export_keying_material(label, context, output)
+    }
 }
 
 pub struct KeyLoggingTransportRekey<R: SecretReceiver, T: TransportRekey> {

@@ -242,7 +242,17 @@ where
         label: &[u8],
         context: &[u8],
     ) -> Result<(), crypto::ExportKeyingMaterialError> {
-        Err(crypto::ExportKeyingMaterialError)
+        // Check if handshake is completed
+        let handshake = self.handshake.as_ref()
+            .ok_or(crypto::ExportKeyingMaterialError)?;
+        
+        if !handshake.is_handshake_finished() {
+            return Err(crypto::ExportKeyingMaterialError);
+        }
+        
+        // Export the keying material using Hyphae's implementation
+        handshake.export_keying_material(label, context, output)
+            .map_err(|_| crypto::ExportKeyingMaterialError)
     }
 }
 

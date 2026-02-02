@@ -153,6 +153,17 @@ pub trait NoiseHandshake {
     fn handshake_hash(&self) -> &[u8];
 
     fn get_ask(&mut self, label: &[u8], key: &mut SymmetricKey) -> Result<(), CryptoError>;
+
+    /// Export keying material similar to TLS export_keying_material
+    /// 
+    /// This function derives key material from the handshake state using the
+    /// final handshake hash, custom label, and optional context.
+    /// 
+    /// Parameters:
+    /// - label: Application-defined label (similar to TLS exporter label)
+    /// - context: Optional context information
+    /// - output: Buffer to write the derived key material
+    fn export_keying_material(&self, label: &[u8], context: &[u8], output: &mut [u8]) -> Result<(), CryptoError>;
 }
 
 pub trait InitialCrypto: TransportCrypto {

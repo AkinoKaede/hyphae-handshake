@@ -537,6 +537,65 @@ impl<A: AeadBackend, H: HashBackend> HandshakeState<A, H> {
         *self = Default::default();
     }
 
+    /// Export keying material for application use
+    /// 
+    /// This derives key material from the final handshake state using HKDF.
+    /// The derivation uses the chaining key (ck) as the PRK and combines
+    /// the handshake hash, custom label, and context as the info parameter.
+    pub fn export_keying_material(&self, label: &[u8], context: &[u8], output: &mut [u8]) -> Result<(), CryptoError> {
+        if !self.is_complete() {
+            return Err(CryptoError::InvalidState);
+        }
+        
+        // Use HKDF-Expand with the chaining key as PRK
+        // Info = handshake_hash || label_length || label || context_length || context || "hyphae-export"
+        let handshake_hash = self.current_handshake_hash();
+        
+        // Build the info parameter
+        let mut info = Vec::new();
+        info.extend_from_slice(&(handshake_hash.len() as u16).to_be_bytes());
+        info.extend_from_slice(handshake_hash);
+        info.extend_from_slice(&(label.len() as u16).to_be_bytes());
+        info.extend_from_slice(label);
+        info.extend_from_slice(&(context.len() as u16).to_be_bytes());
+        info.extend_from_slice(context);
+        info.extend_from_slice(b"hyphae-export");
+        
+        // For outputs larger than hash size, we need to use HKDF-Expand properly
+        // Split the output into hash-sized chunks
+        let hash_size = self.symmetric_state.hash_impl.hash_as_slice(&self.symmetric_state.ck).len();
+        
+        for (i, chunk) in output.chunks_mut(hash_size).enumerate() {
+            let mut full_info = info.clone();
+            full_info.push((i + 1) as u8);  // HKDF-Expand counter
+            
+            if chunk.len() == hash_size {
+                // Full hash-sized chunk
+                let mut temp_hash = self.symmetric_state.hash_impl.zeros();
+                self.symmetric_state.hash_impl.hkdf(
+                    &self.symmetric_state.ck,
+                    [self.symmetric_state.hash_impl.hash_as_mut_slice(&mut temp_hash)],
+                    std::iter::once(full_info.as_slice()),
+                    b""
+                );
+                chunk.copy_from_slice(self.symmetric_state.hash_impl.hash_as_slice(&temp_hash));
+            } else {
+                // Partial chunk at the end
+                let mut temp_hash = self.symmetric_state.hash_impl.zeros();
+                self.symmetric_state.hash_impl.hkdf(
+                    &self.symmetric_state.ck,
+                    [self.symmetric_state.hash_impl.hash_as_mut_slice(&mut temp_hash)],
+                    std::iter::once(full_info.as_slice()),
+                    b""
+                );
+                let temp_slice = self.symmetric_state.hash_impl.hash_as_slice(&temp_hash);
+                chunk.copy_from_slice(&temp_slice[..chunk.len()]);
+            }
+        }
+        
+        Ok(())
+    }
+
     pub fn export_ask_into(&mut self, ask: &mut AskChain<H>, label: &[u8]) -> Result<(), CryptoError> {
         if self.handshake.is_none() || self.level_secret_ask_count == u8::MAX {
             return Err(CryptoError::InvalidState);
@@ -693,6 +752,10 @@ impl <A: AeadBackend, H: HashBackend> NoiseHandshake for HandshakeState<A, H> {
 
     fn get_ask(&mut self, label: &[u8], key: &mut SymmetricKey) -> Result<(), CryptoError> {
         self.get_ask(label, key)
+    }
+
+    fn export_keying_material(&self, label: &[u8], context: &[u8], output: &mut [u8]) -> Result<(), CryptoError> {
+        self.export_keying_material(label, context, output)
     }
 }
 
